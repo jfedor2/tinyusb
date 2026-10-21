@@ -122,6 +122,10 @@ void tuh_mount_cb (uint8_t daddr);
 // Invoked when a device is unmounted (detached)
 void tuh_umount_cb(uint8_t daddr);
 
+// Invoked (in task context) when the host sends a start-of-frame packet
+// Optional, only implemented on (native, non-PIO) RP2040
+TU_ATTR_WEAK void tuh_sof_cb(void);
+
 // Invoked when there is a new usb event, which need to be processed by tuh_task()/tuh_task_ext()
 void tuh_event_hook_cb(uint8_t rhport, uint32_t eventid, bool in_isr);
 

@@ -27,6 +27,7 @@
 
   #include "host/hcd.h"
   #include "host/usbh.h"
+  #include "host/usbh_pvt.h"
 
   #include "interval_override.h"
 
@@ -395,8 +396,13 @@ TU_ATTR_ALWAYS_INLINE static inline bool epx_sof_round_robin(void) {
 }
   #endif
 
-// HOST_SOF is enabled while an EPX endpoint is pending (RP2040) or an interrupt endpoint is aborting. A SOF hidden by
-// another SOF_RD read only delays the reclaim, which counts frames.
+static void call_tuh_sof_cb(void *param) {
+  (void)param;
+  tuh_sof_cb();
+}
+
+// HOST_SOF is enabled while an EPX endpoint is pending (RP2040) or an interrupt endpoint is aborting, and always if
+// tuh_sof_cb() is implemented. A SOF hidden by another SOF_RD read only delays the reclaim, which counts frames.
 static void __tusb_irq_path_func(sof_service)(void) {
   const uint32_t frame      = usb_hw->sof_rd; // also acknowledges HOST_SOF
   bool           sof_needed = false;
@@ -415,6 +421,11 @@ static void __tusb_irq_path_func(sof_service)(void) {
         sof_needed = true;
       }
     }
+  }
+
+  if (tuh_sof_cb) {
+    usbh_defer_func(call_tuh_sof_cb, NULL, true);
+    sof_needed = true;
   }
 
   if (!sof_needed) {
@@ -540,6 +551,10 @@ bool hcd_init(uint8_t rhport, const tusb_rhport_init_t *rh_init) {
   #ifdef HAS_STOP_EPX_ON_NAK
   usb_hw_set->inte = USB_INTE_EPX_STOPPED_ON_NAK_BITS;
   #endif
+
+  if (tuh_sof_cb) {
+    usb_hw_set->inte = USB_INTE_HOST_SOF_BITS;
+  }
 
   return true;
 }
