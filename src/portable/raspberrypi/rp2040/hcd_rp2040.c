@@ -675,12 +675,22 @@ bool hcd_edpt_open(uint8_t rhport, uint8_t dev_addr, const tusb_desc_endpoint_t 
     assert(int_idx < USB_HOST_INTERRUPT_ENDPOINTS);
     assert(ep_desc->bInterval > 0);
 
+    uint8_t interval = tuh_interval_override_cb ? tuh_interval_override_cb(dev_addr, ep_addr, ep_desc->bInterval) : 0;
+    if (interval == 0) {
+      // round down to a power of two, like computers do
+      for (uint8_t bit_idx = 0; bit_idx < 6; bit_idx++) {
+        if ((1u << bit_idx) <= ep_desc->bInterval) {
+          interval = (uint8_t)(1u << bit_idx);
+        }
+      }
+    }
+
     //------------- dpram buf -------------//
     // 15x64 last bytes of DPRAM for interrupt endpoint buffers
     ep->dpram_buf    = (uint8_t *)(USBCTRL_DPRAM_BASE + USB_DPRAM_MAX - (int_idx + 1u) * 64u);
     uint32_t ep_ctrl = EP_CTRL_ENABLE_BITS | EP_CTRL_INTERRUPT_PER_BUFFER |
                        (TUSB_XFER_INTERRUPT << EP_CTRL_BUFFER_TYPE_LSB) | hw_data_offset(ep->dpram_buf) |
-                       ((uint32_t)(ep_desc->bInterval - 1) << EP_CTRL_HOST_INTERRUPT_INTERVAL_LSB);
+                       ((uint32_t)(interval - 1) << EP_CTRL_HOST_INTERRUPT_INTERVAL_LSB);
     usbh_dpram->int_ep_ctrl[int_idx].ctrl = ep_ctrl;
 
     //------------- address control -------------//

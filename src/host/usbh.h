@@ -122,6 +122,11 @@ void tuh_mount_cb (uint8_t daddr);
 // Invoked when a device is unmounted (detached)
 void tuh_umount_cb(uint8_t daddr);
 
+// Invoked when an interrupt endpoint is opened, return the polling interval (in frames) to use instead of
+// the one the device declares in bInterval, or 0 to keep the declared one
+// Optional, only implemented on (native, non-PIO) RP2040
+TU_ATTR_WEAK uint8_t tuh_interval_override_cb(uint8_t daddr, uint8_t ep_addr, uint8_t bInterval);
+
 // Invoked when there is a new usb event, which need to be processed by tuh_task()/tuh_task_ext()
 void tuh_event_hook_cb(uint8_t rhport, uint32_t eventid, bool in_isr);
 
