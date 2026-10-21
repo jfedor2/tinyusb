@@ -122,6 +122,10 @@ void tuh_mount_cb (uint8_t daddr);
 // Invoked when a device is unmounted (detached)
 void tuh_umount_cb(uint8_t daddr);
 
+// Invoked (in task context) when the host sends a start-of-frame packet
+// Optional, only implemented on (native, non-PIO) RP2040
+TU_ATTR_WEAK void tuh_sof_cb(void);
+
 // Invoked when an interrupt endpoint is opened, return the polling interval (in frames) to use instead of
 // the one the device declares in bInterval, or 0 to keep the declared one
 // Optional, only implemented on (native, non-PIO) RP2040
