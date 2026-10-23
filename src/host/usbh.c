@@ -167,8 +167,12 @@ OSAL_QUEUE_DEF(usbh_int_set, _usbh_qdef, CFG_TUH_TASK_QUEUE_SZ, hcd_event_t);
 static osal_queue_t _usbh_q;
 
 #if CFG_TUH_HUB
-// Deferred attachment queue, only needed when using hub
-OSAL_QUEUE_DEF(usbh_int_set, _usbh_daqdef, CFG_TUH_HUB, hcd_event_t);
+// Deferred attachment queue, only needed when using hub: one attach per hub, plus one per roothub port, which can
+// all attach at once (Pico-PIO-USB has several). attach_debouncing_bm limits roothub ports to 8.
+#ifndef CFG_TUH_DEFERRED_ATTACH_QUEUE_SZ
+  #define CFG_TUH_DEFERRED_ATTACH_QUEUE_SZ (CFG_TUH_HUB + 8)
+#endif
+OSAL_QUEUE_DEF(usbh_int_set, _usbh_daqdef, CFG_TUH_DEFERRED_ATTACH_QUEUE_SZ, hcd_event_t);
 static osal_queue_t _usbh_daq;
 #endif
 
