@@ -394,8 +394,13 @@ TU_ATTR_ALWAYS_INLINE static inline bool epx_sof_round_robin(void) {
 }
   #endif
 
+// at most one tuh_sof_cb() call is queued at a time: a task running late gets one call, not a backlog that would push
+// transfer events out of the queue
+static volatile bool sof_cb_queued = false;
+
 static void call_tuh_sof_cb(void *param) {
   (void)param;
+  sof_cb_queued = false;
   tuh_sof_cb();
 }
 
@@ -422,7 +427,9 @@ static void __tusb_irq_path_func(sof_service)(void) {
   }
 
   if (tuh_sof_cb) {
-    usbh_defer_func(call_tuh_sof_cb, NULL, true);
+    if (!sof_cb_queued) {
+      sof_cb_queued = usbh_defer_func(call_tuh_sof_cb, NULL, true);
+    }
     sof_needed = true;
   }
 
@@ -551,6 +558,7 @@ bool hcd_init(uint8_t rhport, const tusb_rhport_init_t *rh_init) {
   #endif
 
   if (tuh_sof_cb) {
+    sof_cb_queued = false;
     usb_hw_set->inte = USB_INTE_HOST_SOF_BITS;
   }
 

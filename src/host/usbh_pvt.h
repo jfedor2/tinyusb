@@ -49,8 +49,8 @@ uint8_t* usbh_get_enum_buf(void);
 
 void usbh_int_set(bool enabled);
 
-// Invoke this function later in tuh_task() by putting it into task queue
-void usbh_defer_func(osal_task_func_t func, void *param, bool in_isr);
+// Invoke this function later in tuh_task() by putting it into task queue, false if the queue is full
+bool usbh_defer_func(osal_task_func_t func, void *param, bool in_isr);
 
 // Schedules a function to be called after certain time asynchronously
 bool usbh_defer_func_ms_async(uint32_t ms, tusb_defer_func_t func, uintptr_t param);

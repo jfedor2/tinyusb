@@ -1310,12 +1310,12 @@ void usbh_spin_unlock(bool in_isr) {
   osal_spin_unlock(&_usbh_spin, in_isr);
 }
 
-void usbh_defer_func(osal_task_func_t func, void *param, bool in_isr) {
+bool usbh_defer_func(osal_task_func_t func, void *param, bool in_isr) {
   hcd_event_t event = { 0 };
   event.event_id = USBH_EVENT_FUNC_CALL;
   event.func_call.func = func;
   event.func_call.param = param;
-  queue_event(&event, in_isr);
+  return queue_event(&event, in_isr);
 }
 
 //--------------------------------------------------------------------+
