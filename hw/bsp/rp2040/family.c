@@ -202,7 +202,8 @@ void board_init(void)
   // rp2350 runs the pico-sdk stock 150 MHz (a runtime switch also truncates ETM
   // capture). rp2040 keeps 120 MHz: soak-tested — the stock 125 MHz collapses
   // PIO-USB bulk-OUT (device NAKs ~600:1, wire-measured, zero CRC errors).
-  #if !(defined(PICO_RP2350) && PICO_RP2350 == 1)
+  // A build that sets its own SYS_CLK_HZ keeps it.
+  #if !(defined(PICO_RP2350) && PICO_RP2350 == 1) && (SYS_CLK_HZ == 125 * MHZ)
   set_sys_clock_khz(120000, true); // rp2040 default is 125Mhz
   #endif
 
