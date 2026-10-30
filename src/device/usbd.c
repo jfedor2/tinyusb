@@ -413,6 +413,10 @@ static struct {
   #define _usbd_mutex   NULL
 #endif
 
+// At most one SOF event in the queue at a time, otherwise a main loop stall longer than the
+// queue depth in frames fills the queue and drops events that matter.
+static volatile bool _usbd_sof_queued = false;
+
 TU_ATTR_ALWAYS_INLINE static inline bool queue_event(dcd_event_t const * event, bool in_isr) {
   TU_ASSERT(osal_queue_send(_usbd_q, event, in_isr));
   tud_event_hook_cb(event->rhport, event->event_id, in_isr);
@@ -554,6 +558,7 @@ bool tud_rhport_init(uint8_t rhport, const tusb_rhport_init_t* rh_init) {
 #endif
 
   tu_varclr(&_usbd_dev);
+  _usbd_sof_queued = false;
   _usbd_queued_setup = 0;
 
   osal_spin_init(&_usbd_spin);
@@ -836,6 +841,7 @@ void tud_task_ext(uint32_t timeout_ms, bool in_isr) {
         break;
 
       case DCD_EVENT_SOF:
+        _usbd_sof_queued = false;
         if (tu_bit_test(_usbd_dev.sof_consumer, SOF_CONSUMER_USER)) {
           TU_LOG_USBD("\r\n");
           tud_sof_cb(event.sof.frame_count);
@@ -1487,9 +1493,9 @@ TU_ATTR_FAST_FUNC void dcd_event_handler(dcd_event_t const* event, bool in_isr) 
         queue_event(&event_resume, in_isr);
       }
 
-      if (tu_bit_test(_usbd_dev.sof_consumer, SOF_CONSUMER_USER)) {
+      if (tu_bit_test(_usbd_dev.sof_consumer, SOF_CONSUMER_USER) && !_usbd_sof_queued) {
         dcd_event_t const event_sof = {.rhport = event->rhport, .event_id = DCD_EVENT_SOF, .sof.frame_count = event->sof.frame_count};
-        queue_event(&event_sof, in_isr);
+        _usbd_sof_queued = queue_event(&event_sof, in_isr);
       }
       break;
 
