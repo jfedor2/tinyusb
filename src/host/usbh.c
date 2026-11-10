@@ -1800,6 +1800,9 @@ enum {
 static uint8_t enum_get_new_address(bool is_hub);
 static bool    enum_parse_configuration_desc(uint8_t dev_addr, const tusb_desc_configuration_t *desc_cfg);
 static void    enum_full_complete(bool success);
+#if CFG_TUH_HUB
+static void    enum_port_disabled(tuh_xfer_t *xfer);
+#endif
 static bool    enum_retry(void);
 static void    process_enumeration(tuh_xfer_t *xfer);
 
@@ -2019,7 +2022,22 @@ static void process_enumeration(tuh_xfer_t *xfer) {
       }
 
       const uint8_t new_addr = enum_get_new_address(desc_device->bDeviceClass == TUSB_CLASS_HUB);
-      TU_ASSERT(new_addr != 0,);
+      if (new_addr == 0) {
+        // No address left (for a hub: more hubs than CFG_TUH_HUB). Give up on
+        // this device, but finish the enumeration so that the hub it's on gets
+        // serviced again. Behind a hub, disable its port first: it's been reset
+        // and would go on answering at address 0, along with the next device
+        // that gets enumerated.
+        #if CFG_TUH_HUB
+        if (dev0_bus->hub_addr != 0 &&
+            hub_port_clear_feature(dev0_bus->hub_addr, dev0_bus->hub_port, HUB_FEATURE_PORT_ENABLE,
+                                   enum_port_disabled, 0)) {
+          break;
+        }
+        #endif
+        is_enum_failed = true;
+        break;
+      }
 
       usbh_device_t* new_dev = get_device(new_addr);
       new_dev->bus_info = *dev0_bus;
@@ -2358,6 +2376,13 @@ static void enum_teardown(bool success) {
     }
   }
 }
+
+#if CFG_TUH_HUB
+static void enum_port_disabled(tuh_xfer_t *xfer) {
+  (void) xfer;
+  enum_full_complete(false);
+}
+#endif
 
 static void enum_full_complete(bool success) {
   TU_LOG_USBH("Enumeration complete: success = %u\r\n", success);
