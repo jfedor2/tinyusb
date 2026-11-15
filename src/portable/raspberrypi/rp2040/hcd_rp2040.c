@@ -210,6 +210,18 @@ TU_ATTR_ALWAYS_INLINE static inline uint32_t int_edpt_status_bit(const hw_endpoi
   return TU_BIT(2u * ep->interrupt_num + (tu_edpt_dir(ep->ep_addr) == TUSB_DIR_OUT ? 1u : 0u));
 }
 
+// An interrupt endpoint slot is enabled in INT_EP_CTRL only while its buffer is armed. With a slot enabled and
+// nothing armed, the controller (RP2040 and RP2350) sometimes writes a bogus completion (FULL, LAST, length 0) into
+// EPX's buffer control during a control transfer with the same device: a report descriptor read as 0 bytes, or a
+// panic when the next stage finds the other EPX buffer still available.
+TU_ATTR_ALWAYS_INLINE static inline void int_edpt_poll_start(const hw_endpoint_t *ep) {
+  usb_hw_set->int_ep_ctrl = TU_BIT(ep->interrupt_num);
+}
+
+TU_ATTR_ALWAYS_INLINE static inline void int_edpt_poll_stop(const hw_endpoint_t *ep) {
+  usb_hw_clear->int_ep_ctrl = TU_BIT(ep->interrupt_num);
+}
+
 // Round-robin find next pending ep after current epx
 static hw_endpoint_t *__tusb_irq_path_func(epx_next_pending)(hw_endpoint_t *cur_ep) {
   const uint cur_idx = (uint)(cur_ep - &ep_pool[0]);
@@ -337,6 +349,7 @@ static void __tusb_irq_path_func(handle_buf_status_isr)(void) {
         io_rw_32  *buf_reg = dpram_int_ep_buffer_ctrl(ep->interrupt_num);
         const bool done    = rp2usb_xfer_continue(ep, ep_reg, buf_reg, 0, tu_edpt_dir(ep->ep_addr) == TUSB_DIR_IN);
         if (done) {
+          int_edpt_poll_stop(ep);
           xfer_complete_isr(ep, XFER_RESULT_SUCCESS, false);
         }
         break;
@@ -358,10 +371,10 @@ TU_ATTR_ALWAYS_INLINE static inline void int_edpt_reclaim(hw_endpoint_t *ep) {
   if (ep->state == EPSTATE_ABORTING_PENDING) {
     ep->state = EPSTATE_ACTIVE;
     rp2usb_buffer_start(ep, dpram_int_ep_ctrl(ep->interrupt_num), buf_reg, tu_edpt_dir(ep->ep_addr) == TUSB_DIR_IN);
+    int_edpt_poll_start(ep);
   } else {
-    rp2usb_reset_transfer(ep);
+    rp2usb_reset_transfer(ep); // the slot stays off until the next transfer
   }
-  usb_hw_set->int_ep_ctrl = TU_BIT(ep->interrupt_num);
 }
 
   #ifndef HAS_STOP_EPX_ON_NAK
@@ -622,7 +635,7 @@ void hcd_device_close(uint8_t rhport, uint8_t dev_addr) {
       } else {
         ep->state = EPSTATE_IDLE;
         // disable interrupt endpoint
-        usb_hw_clear->int_ep_ctrl                       = TU_BIT(ep->interrupt_num);
+        int_edpt_poll_stop(ep);
         usb_hw->int_ep_addr_ctrl[ep->interrupt_num - 1] = 0;
 
         io_rw_32 *ep_reg  = dpram_int_ep_ctrl(ep->interrupt_num);
@@ -727,8 +740,7 @@ bool hcd_edpt_open(uint8_t rhport, uint8_t dev_addr, const tusb_desc_endpoint_t 
     }
     usb_hw->int_ep_addr_ctrl[int_idx] = addr_ctrl;
 
-    // Finally, activate interrupt endpoint
-    usb_hw_set->int_ep_ctrl = TU_BIT(ep->interrupt_num);
+    // Polling is enabled (INT_EP_CTRL) only while a buffer is armed, see int_edpt_poll_start()
   }
 
   return true;
@@ -750,7 +762,7 @@ static bool int_edpt_abort(hw_endpoint_t *ep) {
   if (ep->state == EPSTATE_ABORTING_PENDING) {
     ep->state = EPSTATE_ABORTING; // the queued transfer never reached the controller
   } else if (ep->state == EPSTATE_ACTIVE) {
-    usb_hw_clear->int_ep_ctrl = TU_BIT(ep->interrupt_num);
+    int_edpt_poll_stop(ep);
     const uint32_t buf_ctrl   = *dpram_int_ep_buffer_ctrl(ep->interrupt_num);
     if (buf_ctrl & USB_BUF_CTRL_AVAIL) {
       ep->next_pid = (buf_ctrl & USB_BUF_CTRL_DATA1_PID) ? 1u : 0u; // armed packet not done: reuse its PID
@@ -807,6 +819,7 @@ bool hcd_edpt_xfer(uint8_t rhport, uint8_t dev_addr, uint8_t ep_addr, uint8_t *b
     } else {
       rp2usb_xfer_start(ep, dpram_int_ep_ctrl(ep->interrupt_num), dpram_int_ep_buffer_ctrl(ep->interrupt_num), buffer,
                         NULL, buflen);
+      int_edpt_poll_start(ep);
     }
     rp2usb_critical_exit();
     return ret;
